@@ -43,11 +43,12 @@ const FILE_PATH: &str = "tasks.csv";
 
 fn open_file() -> io::Result<File> {
     let path = Path::new(FILE_PATH);
-    if !path.exists() {
-        File::create(path)
-    } else {
-        OpenOptions::new().read(true).write(true).open(path)
-    }
+
+    OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(path)
 }
 
 fn write_tasks(tasks: &[Task]) -> Result<(), Box<dyn Error>> {
