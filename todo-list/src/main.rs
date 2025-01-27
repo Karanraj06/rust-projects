@@ -1,4 +1,5 @@
 use chrono::{DateTime, Local};
+use chrono_humanize::HumanTime;
 use clap::{Parser, Subcommand};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -98,11 +99,26 @@ fn add_task(description: String) -> Result<(), Box<dyn std::error::Error>> {
 
 fn list_tasks(show_all: bool) -> Result<(), Box<dyn std::error::Error>> {
     let tasks = read_tasks()?;
+
+    if show_all {
+        println!("{:<4} {:<50} {:<20} {:<5}", "ID", "Task", "Created", "Done");
+    } else {
+        println!("{:<4} {:<50} {:<20}", "ID", "Task", "Created");
+    }
+
     for task in tasks.iter().filter(|t| show_all || !t.is_complete) {
-        println!(
-            "ID: {}\tTask: {}\tCreated: {}\tDone: {}",
-            task.id, task.description, task.created_at, task.is_complete
-        );
+        let created_human_readable = HumanTime::from(task.created_at).to_string();
+        if show_all {
+            println!(
+                "{:<4} {:<50} {:<20} {:<5}",
+                task.id, task.description, created_human_readable, task.is_complete
+            );
+        } else {
+            println!(
+                "{:<4} {:<50} {:<20}",
+                task.id, task.description, created_human_readable
+            );
+        }
     }
     Ok(())
 }
