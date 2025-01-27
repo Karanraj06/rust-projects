@@ -13,7 +13,8 @@ struct Task {
     id: u32,
     description: String,
     created_at: DateTime<Local>,
-    is_complete: bool,
+    completed_at: Option<DateTime<Local>>,
+    due_date: Option<DateTime<Local>>,
 }
 
 #[derive(Parser)]
@@ -28,6 +29,8 @@ struct Cli {
 enum Commands {
     Add {
         description: String,
+        #[arg(short, long)]
+        due: Option<String>,
     },
     List {
         #[arg(short, long)]
@@ -82,14 +85,30 @@ fn read_tasks() -> Result<Vec<Task>, Box<dyn std::error::Error>> {
         .map_err(From::from)
 }
 
-fn add_task(description: String) -> Result<(), Box<dyn std::error::Error>> {
+fn parse_due_date(input: &str) -> Option<DateTime<Local>> {
+    let today = Local::now().date_naive();
+    match input.to_lowercase().as_str() {
+        "today" => today
+            .and_hms_milli_opt(23, 59, 59, 999)?
+            .and_local_timezone(Local)
+            .single(),
+        "tomorrow" => (today + chrono::Duration::days(1))
+            .and_hms_milli_opt(23, 59, 59, 999)?
+            .and_local_timezone(Local)
+            .single(),
+        _ => None,
+    }
+}
+
+fn add_task(description: String, due: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let mut tasks = read_tasks()?;
     let id = tasks.last().map_or(1, |t| t.id + 1);
     let new_task = Task {
         id,
         description,
         created_at: Local::now(),
-        is_complete: false,
+        completed_at: None,
+        due_date: due.and_then(|d| parse_due_date(&d)),
     };
     tasks.push(new_task);
     write_tasks(&tasks)?;
@@ -101,22 +120,41 @@ fn list_tasks(show_all: bool) -> Result<(), Box<dyn std::error::Error>> {
     let tasks = read_tasks()?;
 
     if show_all {
-        println!("{:<4} {:<50} {:<20} {:<5}", "ID", "Task", "Created", "Done");
+        println!(
+            "{:<4} {:<50} {:<20} {:<20} {:<20}",
+            "ID", "Task", "Created", "Due", "Completed"
+        );
     } else {
-        println!("{:<4} {:<50} {:<20}", "ID", "Task", "Created");
+        println!("{:<4} {:<50} {:<20} {:<20}", "ID", "Task", "Created", "Due");
     }
 
-    for task in tasks.iter().filter(|t| show_all || !t.is_complete) {
+    for task in tasks
+        .iter()
+        .filter(|t| show_all || t.completed_at.is_none())
+    {
         let created_human_readable = HumanTime::from(task.created_at).to_string();
+        let due_human_readable = task
+            .due_date
+            .map(|d| HumanTime::from(d).to_string())
+            .unwrap_or_else(|| "None".to_string());
+        let completed_human_readable = task
+            .completed_at
+            .map(|c| HumanTime::from(c).to_string())
+            .unwrap_or_else(|| "Incomplete".to_string());
+
         if show_all {
             println!(
-                "{:<4} {:<50} {:<20} {:<5}",
-                task.id, task.description, created_human_readable, task.is_complete
+                "{:<4} {:<50} {:<20} {:<20} {:<20}",
+                task.id,
+                task.description,
+                created_human_readable,
+                due_human_readable,
+                completed_human_readable
             );
         } else {
             println!(
-                "{:<4} {:<50} {:<20}",
-                task.id, task.description, created_human_readable
+                "{:<4} {:<50} {:<20} {:<20}",
+                task.id, task.description, created_human_readable, due_human_readable
             );
         }
     }
@@ -126,7 +164,7 @@ fn list_tasks(show_all: bool) -> Result<(), Box<dyn std::error::Error>> {
 fn complete_task(task_id: u32) -> Result<(), Box<dyn std::error::Error>> {
     let mut tasks = read_tasks()?;
     if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
-        task.is_complete = true;
+        task.completed_at = Some(Local::now());
         write_tasks(&tasks)?;
         println!("Task marked as complete!");
     } else {
@@ -153,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Add { description } => add_task(description)?,
+        Commands::Add { description, due } => add_task(description, due)?,
         Commands::List { all } => list_tasks(all)?,
         Commands::Complete { task_id } => complete_task(task_id)?,
         Commands::Delete { task_id } => delete_task(task_id)?,
