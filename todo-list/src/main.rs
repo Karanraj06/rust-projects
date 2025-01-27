@@ -103,12 +103,24 @@ fn parse_due_date(input: &str) -> Option<DateTime<Local>> {
 fn add_task(description: String, due: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let mut tasks = read_tasks()?;
     let id = tasks.last().map_or(1, |t| t.id + 1);
+
+    let parsed_due_date = match due {
+        Some(d) => match parse_due_date(&d) {
+            Some(parsed_date) => Some(parsed_date),
+            None => {
+                eprintln!("Invalid due date format: {}", d);
+                return Ok(());
+            }
+        },
+        None => None,
+    };
+
     let new_task = Task {
         id,
         description,
         created_at: Local::now(),
         completed_at: None,
-        due_date: due.and_then(|d| parse_due_date(&d)),
+        due_date: parsed_due_date,
     };
     tasks.push(new_task);
     write_tasks(&tasks)?;
