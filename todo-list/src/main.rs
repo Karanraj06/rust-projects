@@ -1,5 +1,6 @@
 use chrono::{DateTime, Local};
 use clap::{Parser, Subcommand};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::{File, OpenOptions};
@@ -41,18 +42,24 @@ enum Commands {
 
 const FILE_PATH: &str = "tasks.csv";
 
-fn open_file() -> io::Result<File> {
+fn open_file(truncate: bool) -> io::Result<File> {
     let path = Path::new(FILE_PATH);
 
-    OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(path)
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true);
+
+    if truncate {
+        options.truncate(true);
+    }
+
+    let file = options.open(path)?;
+
+    file.lock_exclusive()?;
+    Ok(file)
 }
 
 fn write_tasks(tasks: &[Task]) -> Result<(), Box<dyn Error>> {
-    let mut wtr = csv::Writer::from_writer(open_file()?);
+    let mut wtr = csv::Writer::from_writer(open_file(true)?);
     for task in tasks {
         wtr.serialize(task)?;
     }
@@ -61,10 +68,14 @@ fn write_tasks(tasks: &[Task]) -> Result<(), Box<dyn Error>> {
 }
 
 fn read_tasks() -> Result<Vec<Task>, Box<dyn std::error::Error>> {
-    if !Path::new(FILE_PATH).exists() {
+    let path = Path::new(FILE_PATH);
+
+    if !path.exists() {
         return Ok(vec![]);
     }
-    let mut rdr = csv::Reader::from_path(FILE_PATH)?;
+
+    let file = open_file(false)?;
+    let mut rdr = csv::Reader::from_reader(file);
     rdr.deserialize()
         .collect::<Result<Vec<Task>, _>>()
         .map_err(From::from)
